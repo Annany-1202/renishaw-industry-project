@@ -1,0 +1,37 @@
+# --- Python ---
+renishaw_venv/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# --- Frontend ---
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# --- Generated application data (rebuilt from the PDFs on first start) ---
+# database, extracted images, vector index, stored uploads, reports
+data/
+
+# --- Catalogue PDFs ---
+# The Renishaw catalogues are copyrighted and are not redistributed with this repository.
+# Each user places their own copies in source_pdfs/ (see README.md).
+source_pdfs/*
+!source_pdfs/.gitkeep
+provided_pdfs/
+*.pdf
+
+# --- Local configuration and secrets ---
+.env
+.env.*
+
+# --- Editors, tools, OS ---
+.claude/
+.vscode/
+.idea/
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store
