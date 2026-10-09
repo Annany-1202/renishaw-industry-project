@@ -32,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="h-14 border-b border-notion-borderLight dark:border-notion-borderDark bg-notion-light/80 dark:bg-notion-dark/80 backdrop-blur flex items-center justify-between px-6 shrink-0 z-10">
       {/* Breadcrumbs */}
       <div className="flex items-center space-x-2 text-sm">
-        <span className="text-notion-mutedLight dark:text-notion-mutedDark">Renishaw Metrology</span>
+        <span className="text-notion-mutedLight dark:text-notion-mutedDark">Renishaw Project</span>
         <span className="text-notion-mutedLight dark:text-notion-mutedDark">/</span>
         <span className="font-medium text-notion-textLight dark:text-notion-textDark">{getTabTitle()}</span>
       </div>

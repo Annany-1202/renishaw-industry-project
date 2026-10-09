@@ -37,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               R
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-semibold truncate leading-tight">Renishaw Metrology</span>
+              <span className="text-sm font-semibold truncate leading-tight">Renishaw Project</span>
               <span className="text-[10px] text-notion-mutedLight dark:text-notion-mutedDark">Technical Catalogue</span>
             </div>
           </div>
