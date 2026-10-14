@@ -48,7 +48,8 @@ python -m venv renishaw_venv
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 ```
 
-`setup.ps1` installs `backendequirements.txt`, checks Ollama and its models, and tells you if the
+`setup.ps1` installs `backend
+equirements.txt`, checks Ollama and its models, and tells you if the
 frontend still needs building.
 
 ### 4. Pull the Ollama models (optional, large downloads)
@@ -117,7 +118,7 @@ ode_modules\`, `frontend\dist\` | build output | step 5 |
 scripts\run_tests.ps1          # 180 automated tests, about 1–2 minutes, no Ollama needed
 scripts\run_eval.ps1           # 135-query evaluation, rewrites docs\EVALUATION.md (several minutes)
 scripts\run_eval.ps1 -Llm off  # rules-only evaluation, no Ollama needed
-scripts\verify_offline.ps1     # offline checks
+scripts\verify_offline.ps1     # offline checks 
 ```
 
 Tests and the evaluation use a temporary data directory; they never modify `data\`. Both need the
