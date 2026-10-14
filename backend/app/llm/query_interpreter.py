@@ -474,10 +474,7 @@ def rule_based_query_parser(raw_query: str, vocabulary: Optional[Set[str]] = Non
                       or any(x.has_unit or x.field for x in quantities))  # a bare number is not a request
     if foreign:
         q.is_irrelevant = True
-        q.irrelevance_reason = (
-            f"The request is about '{foreign[0]}', which is not a product in the indexed catalogues. "
-            "The catalogues cover Renishaw styli, extensions, adaptors and accessories."
-        )
+        q.irrelevance_reason = f"It asks about '{foreign[0]}', which is not a product in them."
     elif q.part_number or category_explicit or has_domain_hint:
         pass
     elif has_attributes and not unknown:
@@ -485,10 +482,7 @@ def rule_based_query_parser(raw_query: str, vocabulary: Optional[Set[str]] = Non
     else:
         # No product noun recognised and words the catalogue does not use: scope is undecided.
         q.is_irrelevant = True
-        q.irrelevance_reason = (
-            "No stylus or accessory type could be recognised in the request. The indexed catalogues cover "
-            "Renishaw styli, extensions, adaptors and accessories."
-        )
+        q.irrelevance_reason = "No catalogue product type, part number or specification could be recognised in it."
         q.interpreter = "rules:scope_undecided"
     q.confidence = round(max(0.2, 1.0 - 0.12 * len(unknown) - (0.2 if ambiguous_qty else 0.0)), 2)
     if ambiguous_qty is not None:
@@ -502,6 +496,8 @@ def rule_based_query_parser(raw_query: str, vocabulary: Optional[Set[str]] = Non
 
 def finalise(q: ParsedQuery, asked_before: Optional[str] = None) -> ParsedQuery:
     """Apply compatibility rules and decide whether a clarification is needed (search-first policy)."""
+    if asked_before and asked_before not in q.clarification_history:
+        q.clarification_history.append(asked_before)
     if q.is_irrelevant:
         q.clarification_needed = False
         return q
@@ -558,11 +554,35 @@ def finalise(q: ParsedQuery, asked_before: Optional[str] = None) -> ParsedQuery:
     q.clarification_type = None
     q.clarification_question = None
     q.suggested_options = []
-    has_dimension = any(getattr(q, f) is not None for f in NUMERIC_ATTRIBUTES)
     if q.part_number:
         return q
+    _next_vague_question(q)
+    return q
+
+
+# A vague request is clarified one question at a time, most decisive first. A question is never
+# asked twice for the same request; when the answers run out the search runs with what is known.
+MAX_CLARIFICATION_ROUNDS = 4
+
+
+def _next_vague_question(q: ParsedQuery) -> None:
+    asked = set(q.clarification_history)
+    if sum(1 for h in q.clarification_history if not h.startswith("NARROW:")) >= MAX_CLARIFICATION_ROUNDS:
+        return
+    has_dimension = any(getattr(q, f) is not None for f in NUMERIC_ATTRIBUTES)
+    has_detail = bool(has_dimension or q.thread or q.ball_material or q.stem_material or q.stylus_type
+                      or q.descriptor_terms or q.probe_model)
+    label = domain.CATEGORY_OPTION_LABELS.get(q.category or "")
+    noun = f"the {label.lower()}" if label else "it"
     needs_interface = q.category in (None, "stylus", "extension", "adaptor")
-    if q.qualitative_terms and not has_dimension:
+
+    if "MISSING_PRODUCT_TYPE" not in asked and q.category is None and not has_detail:
+        # Catalogue-related but nothing to match on: first ask what kind of product it is.
+        q.clarification_needed = True
+        q.clarification_type = "MISSING_PRODUCT_TYPE"
+        q.clarification_question = "What kind of product are you looking for?"
+        q.suggested_options = _category_options()
+    elif "QUALITATIVE_TERMS" not in asked and q.qualitative_terms and not has_dimension:
         # Case C: 'long', 'small' cannot be turned into dimensions reliably.
         wanted = sorted({domain.QUALITATIVE[t] for t in q.qualitative_terms})
         q.clarification_needed = True
@@ -573,22 +593,36 @@ def finalise(q: ParsedQuery, asked_before: Optional[str] = None) -> ParsedQuery:
             f"(in mm) do you need{'' if q.thread else ', and which mounting thread'}?"
         )
         q.suggested_options = [] if q.thread else _thread_options()
-    elif needs_interface and not q.thread and not has_dimension and not q.descriptor_terms \
-            and not q.ball_material and not q.stem_material:
+    elif "MISSING_INTERFACE" not in asked and needs_interface and not q.thread and not has_dimension \
+            and not q.descriptor_terms and not q.ball_material and not q.stem_material:
         # Case B: nothing to match on and compatibility cannot be established.
         q.clarification_needed = True
         q.clarification_type = "MISSING_INTERFACE"
         q.clarification_question = (
-            "Which probe model or mounting thread does it need to fit? "
+            f"Which probe model or mounting thread does {noun} need to fit? "
             "You can also add a ball diameter or length."
         )
         q.suggested_options = _thread_options()
-    if q.clarification_needed and asked_before == q.clarification_type and q.has_search_attributes():
-        # Never ask the same question twice when a meaningful search is possible.
-        q.clarification_needed = False
-        q.clarification_type = q.clarification_question = None
-        q.suggested_options = []
-    return q
+    elif "INSUFFICIENT_DETAILS" not in asked and q.category is None and not has_detail:
+        # The earlier answers added nothing that can be matched.
+        q.clarification_needed = True
+        q.clarification_type = "INSUFFICIENT_DETAILS"
+        q.clarification_question = (
+            "There is not yet enough information to suggest a product. Please give at least one detail, such as "
+            "the product type, mounting thread, ball diameter, length or material "
+            "(for example 'M3 stylus with 2 mm ruby ball')."
+        )
+        q.suggested_options = _category_options()
+
+
+def _category_options() -> List[str]:
+    """Product types to offer, limited to those the indexed catalogues contain."""
+    try:
+        from backend.app.retrieval import catalogue
+        present = catalogue.category_counts()
+    except Exception:
+        present = {}
+    return [label for cat, label in domain.CATEGORY_OPTION_LABELS.items() if not present or present.get(cat)]
 
 
 def _thread_options() -> List[str]:

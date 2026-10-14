@@ -84,6 +84,15 @@ def client(catalogue_reports):
         yield test_client
 
 
+@pytest.fixture(scope="session")
+def bare_client(offline_and_isolated):
+    """API client that does not need the supplied catalogues; tests using it upload their own PDFs."""
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    with TestClient(app) as test_client:
+        yield test_client
+
+
 @pytest.fixture()
 def search(client):
     def run(query, **extra):

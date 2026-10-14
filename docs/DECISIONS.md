@@ -97,6 +97,21 @@ A question is asked only when a search would be unreliable: no thread, dimension
 descriptor at all; qualitative words without numbers; one unlabelled dimension; ball attributes on a
 ball-less product type; contradictory values. The same question is never asked twice.
 
+Vague but catalogue-related requests ("something for my CMM") are clarified one question at a time:
+product type → probe/thread → (if still nothing to match) a request for any detail. The questions
+already asked travel with the interpretation (`clarification_history`), so answers accumulate on the
+original request and no question repeats; after at most four rounds the search runs with what is
+known, and a request with nothing comparable says so instead of listing products.
+
+When more products are eligible than are shown, the results are still returned with a non-blocking
+`follow_up` question about the most decisive open attribute (type, thread, ball diameter, length,
+materials). Its options are values the eligible products actually have, with counts, and are offered
+only if the parser reads them back as that exact value. Answering uses the clarification path, so
+hard constraints and provenance are unchanged.
+
+Requests outside the catalogues get one message: "This request is not related to the uploaded
+catalogues", the reason, and the names and product types of the indexed documents.
+
 ## D11. Ingestion is staged and runs in the background
 Upload stores the file under a generated name and returns at once; one worker thread ingests. Records,
 images and vectors are written while the document is `Processing`; the switch to `Ready` commits in
@@ -127,3 +142,11 @@ the log. Runtime settings accept only a fixed set of validated fields.
 Both set `RENISHAW_DATA_DIR` to a temporary directory before the application is imported and ingest
 the catalogues there. The evaluation's expected answers come from an independent oracle in
 `evaluation/dataset.py`; `docs/EVALUATION.md` is generated from the run.
+
+## D16. Browsing a document's images and parts
+`GET /api/documents/{id}/images` lists every image extracted from the PDF (page, type, description,
+linked part numbers with association status and basis). `GET /api/documents/{id}/parts` lists the
+document's own product records with specifications, source page/table, validation status and linked
+images; it filters by text (`q`, wildcards are literal) and `category` and pages with
+`offset`/`limit`. Both answer only for `Ready` documents (409 otherwise), consistent with
+`/api/images/{id}` serving only Ready images. Rejected associations are not shown.

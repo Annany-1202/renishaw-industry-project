@@ -3,6 +3,8 @@ import {
   DocumentInfo,
   DocumentDetail,
   DeletionPreview,
+  DocumentImages,
+  DocumentParts,
   SettingsConfig,
   SettingsPatch,
   HealthStatus,
@@ -90,3 +92,21 @@ export const resetSettings = () => request<SettingsConfig>('/settings/reset', { 
 export const triggerReconcile = () => request<any>('/admin/reconcile', { method: 'POST' }, 'Reconciliation failed');
 export const triggerReindex = () => request<any>('/admin/reindex', { method: 'POST' }, 'Reindexing failed');
 export const restoreDefaults = () => request<{ queued: string[] }>('/admin/restore-defaults', { method: 'POST' }, 'Could not restore the supplied catalogues');
+export const fetchDocumentImages = (id: string) =>
+  request<DocumentImages>(`/documents/${encodeURIComponent(id)}/images`, undefined, 'Could not load the document images');
+
+export function fetchDocumentParts(
+  id: string,
+  params: { q?: string; category?: string; offset?: number; limit?: number } = {}
+): Promise<DocumentParts> {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') search.set(key, String(value));
+  });
+  const qs = search.toString();
+  return request<DocumentParts>(
+    `/documents/${encodeURIComponent(id)}/parts${qs ? `?${qs}` : ''}`,
+    undefined,
+    'Could not load the document parts'
+  );
+}

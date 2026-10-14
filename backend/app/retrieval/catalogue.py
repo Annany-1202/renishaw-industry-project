@@ -8,7 +8,8 @@ from backend.app.db.database import READY, db
 from backend.app.matching.domain import STOPWORDS
 
 _lock = threading.Lock()
-_cache: Dict[str, Any] = {"version": None, "products": [], "vocabulary": set(), "threads": []}
+_cache: Dict[str, Any] = {"version": None, "products": [], "vocabulary": set(), "threads": [], "categories": {},
+                          "documents": []}
 
 
 def _data_version(conn) -> Tuple:
@@ -33,6 +34,8 @@ def _load() -> Dict[str, Any]:
     products: List[Dict[str, Any]] = []
     vocabulary: Set[str] = set()
     threads: Set[str] = set()
+    categories: Dict[str, int] = {}
+    documents: List[str] = []
     for row in rows:
         p = dict(row)
         for key in ("extra_attributes", "raw_attributes"):
@@ -50,10 +53,14 @@ def _load() -> Dict[str, Any]:
         vocabulary |= {t for t in p["_tokens"] if t.isalpha() and len(t) >= 4 and t not in STOPWORDS}
         if p.get("thread") and re.fullmatch(r"M\d{1,2}", p["thread"]):
             threads.add(p["thread"])
+        categories[p["category"]] = categories.get(p["category"], 0) + 1
+        if p["doc_filename"] not in documents:
+            documents.append(p["doc_filename"])
         products.append(p)
     with _lock:
         _cache.update(version=version, products=products, vocabulary=vocabulary,
-                      threads=sorted(threads, key=lambda t: int(t[1:])))
+                      threads=sorted(threads, key=lambda t: int(t[1:])), categories=categories,
+                      documents=sorted(documents))
         return _cache
 
 
@@ -67,6 +74,15 @@ def vocabulary() -> Set[str]:
 
 def available_threads() -> List[str]:
     return _load()["threads"]
+
+
+def category_counts() -> Dict[str, int]:
+    return _load()["categories"]
+
+
+def document_names() -> List[str]:
+    """File names of the Ready documents that contribute products."""
+    return _load()["documents"]
 
 
 def invalidate() -> None:

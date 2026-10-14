@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from backend.app.core.config import settings
 from backend.app.matching.explainer import explain
+from backend.app.matching.followup import narrowing_question
 from backend.app.matching.relevance_gate import check_conflicting_constraints, check_relevance
 from backend.app.matching.schemas import (
     AttributeComparison, ImageInfo, ParsedQuery, ProductMatch, SearchResponse, SourceReference,
@@ -178,6 +179,12 @@ def execute_deterministic_search(query: ParsedQuery, raw_query_text: Optional[st
                          diagnostics={"reason": "empty_catalogue"})
     if query.part_number:
         return _part_number_lookup(query, raw, started)
+    if not (query.has_search_attributes() or query.category or query.stylus_type or query.secondary_thread):
+        # The clarification questions are exhausted and nothing in the request can be compared.
+        return _response(query, raw, started, outcome="no_match",
+                         message="Not enough information was given to suggest a product. Start a new search that "
+                                 "names at least one detail, for example 'M3 stylus with 2 mm ruby ball'.",
+                         diagnostics={"reason": "insufficient_details"})
 
     by_part: Dict[str, List[Dict[str, Any]]] = {}
     hard_failures: Dict[str, int] = {}
@@ -277,7 +284,12 @@ def execute_deterministic_search(query: ParsedQuery, raw_query_text: Optional[st
     shown = chosen[:settings.MAX_RESULTS]
     images = catalogue.verified_images([e["product"]["part_number"] for e in shown])
     results = [_build_match(query, e, images) for e in shown]
+    follow_up = None
     if len(chosen) > len(shown):
         message += f" Showing the first {len(shown)} of {len(chosen)}; add attributes to narrow the search."
+        follow_up = narrowing_question(query, [e["product"] for e in chosen], len(shown))
+        if follow_up:
+            # Remembered with the request so a later refinement asks about something else.
+            query.clarification_history.append(f"NARROW:{follow_up['attribute']}")
     return _response(query, raw, started, result_class=result_class, outcome=outcome, message=message,
-                     total_found=len(chosen), results=results, diagnostics=diagnostics)
+                     total_found=len(chosen), results=results, diagnostics=diagnostics, follow_up=follow_up)
