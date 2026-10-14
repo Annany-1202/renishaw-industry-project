@@ -12,7 +12,8 @@ import {
   Ban,
   SearchX,
   ShieldQuestion,
-  Info
+  Info,
+  Filter
 } from 'lucide-react';
 import { SearchResponse, ProductMatch, ParsedQuery, HealthStatus } from '../types';
 
@@ -257,6 +258,35 @@ export const SearchPage: React.FC<SearchPageProps> = ({
     : [];
   const outcome = searchResponse?.outcome;
   const asksUser = outcome === 'clarification' || outcome === 'conflict';
+  const history = (parsed?.clarification_history as string[] | undefined) || [];
+  const answeredSteps = history.filter((h) => !h.startsWith('NARROW:')).length;
+  const followUp = searchResponse?.follow_up;
+
+  const renderFollowUp = () =>
+    followUp && (
+      <div className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 space-y-2">
+        <div className="flex items-start space-x-2">
+          <Filter size={14} className="text-neutral-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-neutral-700 dark:text-neutral-300">
+            <span className="font-semibold">Narrow down: </span>
+            {followUp.question}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {followUp.options.map((opt, i) => (
+            <button
+              key={opt}
+              disabled={loading}
+              onClick={() => submitClarification(opt)}
+              className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-50 transition-colors"
+            >
+              <span>{opt}</span>
+              {followUp.option_counts[i] !== undefined && <span className="text-[10px] text-neutral-500">{followUp.option_counts[i]}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
@@ -446,6 +476,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                 <div className="space-y-1">
                   <h4 className="text-sm font-semibold text-blue-950 dark:text-blue-200">
                     {outcome === 'conflict' ? 'Your request contains conflicting requirements' : 'One detail is needed'}
+                    {outcome !== 'conflict' && answeredSteps > 0 && (
+                      <span className="ml-2 text-[11px] font-normal text-blue-700 dark:text-blue-300">question {answeredSteps + 1}</span>
+                    )}
                   </h4>
                   <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">{searchResponse.clarification.question}</p>
                 </div>
@@ -497,6 +530,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                 </h3>
               </div>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">{searchResponse.message}</p>
+              {renderFollowUp()}
               <div className="space-y-3">{searchResponse.results.map(renderProductCard)}</div>
             </div>
           )}
@@ -512,6 +546,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
               </div>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">{searchResponse.message}</p>
               <p className="text-[11px] text-neutral-400">{searchResponse.score_note}</p>
+              {renderFollowUp()}
               <div className="space-y-3">{searchResponse.results.map(renderProductCard)}</div>
             </div>
           )}

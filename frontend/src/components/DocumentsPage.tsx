@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { UploadCloud, FileText, Trash2, RotateCcw, CheckCircle, AlertTriangle, Loader2, Download, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { UploadCloud, FileText, Trash2, RotateCcw, CheckCircle, AlertTriangle, Loader2, Download, X, ChevronDown, ChevronRight, Image as ImageIcon, List } from 'lucide-react';
 import { DocumentInfo, DocumentDetail, DeletionPreview } from '../types';
 import { ApiError, deleteDocument, fetchDeletionPreview, fetchDocument, reportUrl, retryDocument, uploadDocument } from '../api';
+import { DocumentGallery, GalleryTab } from './DocumentGallery';
 
 interface DocumentsPageProps {
   documents: DocumentInfo[];
@@ -28,6 +29,7 @@ export const DocumentsPage: React.FC<DocumentsPageProps> = ({ documents, loadErr
   const [working, setWorking] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detail, setDetail] = useState<DocumentDetail | null>(null);
+  const [gallery, setGallery] = useState<{ doc: DocumentInfo; tab: GalleryTab } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const upload = async (files: FileList | File[] | null) => {
@@ -179,6 +181,7 @@ export const DocumentsPage: React.FC<DocumentsPageProps> = ({ documents, loadErr
         )}
         {documents.map((doc) => {
           const busy = BUSY.includes(doc.status) || working === doc.id;
+          const browsable = doc.status === 'Ready' && working !== doc.id;
           const open = expanded === doc.id;
           const report = open && detail?.id === doc.id ? detail.ingestion_report : null;
           return (
@@ -188,7 +191,24 @@ export const DocumentsPage: React.FC<DocumentsPageProps> = ({ documents, loadErr
                   {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
                 <FileText size={18} className="text-neutral-400 shrink-0" />
-                <div className="min-w-0 flex-1">
+                <div
+                  className={`min-w-0 flex-1 ${browsable ? 'cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400' : ''}`}
+                  {...(browsable
+                    ? {
+                        role: 'button',
+                        tabIndex: 0,
+                        title: 'Open the images and parts extracted from this PDF',
+                        'aria-label': `Browse images and parts of ${doc.filename}`,
+                        onClick: () => setGallery({ doc, tab: 'images' }),
+                        onKeyDown: (e: React.KeyboardEvent) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setGallery({ doc, tab: 'images' });
+                          }
+                        }
+                      }
+                    : {})}
+                >
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate" title={doc.filename}>{doc.filename}</span>
                     {doc.is_builtin && <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-500 shrink-0">supplied</span>}
@@ -210,6 +230,28 @@ export const DocumentsPage: React.FC<DocumentsPageProps> = ({ documents, loadErr
                   {doc.status === 'Ready' ? <CheckCircle size={11} /> : doc.status === 'Failed' ? <AlertTriangle size={11} /> : <Loader2 size={11} className="animate-spin" />}
                   <span>{doc.status}</span>
                 </span>
+                {browsable && (
+                  <>
+                    <button
+                      onClick={() => setGallery({ doc, tab: 'images' })}
+                      title="Images extracted from this PDF"
+                      aria-label={`Images of ${doc.filename}`}
+                      className="inline-flex items-center space-x-1 px-2 py-1 rounded text-[11px] text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    >
+                      <ImageIcon size={13} />
+                      <span>Images</span>
+                    </button>
+                    <button
+                      onClick={() => setGallery({ doc, tab: 'parts' })}
+                      title="All parts extracted from this PDF"
+                      aria-label={`All parts of ${doc.filename}`}
+                      className="inline-flex items-center space-x-1 px-2 py-1 rounded text-[11px] text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    >
+                      <List size={13} />
+                      <span>All parts</span>
+                    </button>
+                  </>
+                )}
                 {doc.status === 'Failed' && (
                   <button onClick={() => retry(doc)} disabled={busy} title="Retry ingestion" aria-label={`Retry ${doc.filename}`} className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 disabled:opacity-40">
                     <RotateCcw size={15} />
@@ -288,6 +330,8 @@ export const DocumentsPage: React.FC<DocumentsPageProps> = ({ documents, loadErr
           );
         })}
       </div>
+
+      {gallery && <DocumentGallery key={gallery.doc.id} document={gallery.doc} initialTab={gallery.tab} onClose={() => setGallery(null)} />}
 
       {confirm && (
         <div role="dialog" aria-modal="true" aria-label="Confirm deletion" className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setConfirm(null)}>

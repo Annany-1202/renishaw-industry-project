@@ -62,7 +62,15 @@ CATEGORY_NOUNS: List[Tuple[str, str, str]] = [
     (r"(?:stylus\s+)?tools?|spanners?|allen\s+keys?", "tool", None),
     (r"washers?|screws?|crash\s+protection(?:\s+devices?)?|star\s+centres?", "accessory", None),
     (r"styl(?:us|i|uses)|probe\s+tips?", "stylus", None),
+    # Last, so 'styli and accessories' stays a stylus request.
+    (r"accessor(?:y|ies)", "accessory", None),
 ]
+# Answer options for "which kind of product?"; each one parses back to its category through CATEGORY_NOUNS.
+CATEGORY_OPTION_LABELS: Dict[str, str] = {
+    "stylus": "Stylus", "extension": "Stylus extension", "adaptor": "Thread adaptor", "knuckle": "Knuckle",
+    "cube": "Stylus cube", "holder": "Stylus holder", "kit": "Stylus kit", "tool": "Stylus tool",
+    "accessory": "Accessory",
+}
 # Stylus type words (only applied when the category is stylus or unstated).
 STYLUS_TYPE_WORDS: List[Tuple[str, str]] = [
     (r"star", "star"), (r"dis[ck]s?", "disc"), (r"cylind(?:er|rical)", "cylinder"), (r"pointer", "pointer"),
@@ -70,7 +78,8 @@ STYLUS_TYPE_WORDS: List[Tuple[str, str]] = [
     (r"tool\s+(?:setting|datuming)", "tool_datuming"), (r"swivel(?:ling)?", "swivel"), (r"straight", "straight"),
 ]
 # Words that show the request is about measurement hardware even without a product noun.
-DOMAIN_HINTS = r"probe|probes|cmm|metrology|renishaw|zeiss|styli|stylus"
+DOMAIN_HINTS = (r"probe|probes|probing|cmms?|metrology|renishaw|zeiss|styli|stylus|catalogues?|catalogs?|"
+                r"coordinate\s+measuring|touch[\s-]trigger")
 
 # Product nouns that are never in these catalogues. A hit rejects the request (FR-05).
 FOREIGN_TERMS = [

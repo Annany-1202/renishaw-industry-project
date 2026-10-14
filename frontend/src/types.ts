@@ -120,6 +120,7 @@ export interface SearchResponse {
   total_found: number;
   results: ProductMatch[];
   clarification?: { type?: string | null; question?: string | null; options?: string[] } | null;
+  follow_up?: FollowUp | null;
   diagnostics: Record<string, unknown>;
   score_note: string;
   execution_time_ms: number;
@@ -214,4 +215,81 @@ export interface HealthStatus {
     disabled?: boolean;
     error?: string;
   };
+}
+
+export interface ImageLink {
+  part_number: string;
+  product_id: string;
+  product_name: string;
+  association_status: string;
+  association_basis?: string | null;
+}
+
+export interface DocumentImage {
+  image_id: string;
+  document_id: string;
+  source_pdf: string;
+  page_number: number;
+  image_type: string;
+  image_url: string;
+  description?: string | null;
+  associated_parts: ImageLink[];
+}
+
+export interface DocumentImages {
+  document_id: string;
+  filename: string;
+  page_count: number;
+  total: number;
+  image_types: Record<string, number>;
+  linked_images: number;
+  images: DocumentImage[];
+}
+
+export interface DocumentPart {
+  id: string;
+  document_id: string;
+  source_pdf: string;
+  manufacturer?: string | null;
+  part_number: string;
+  alt_part_number?: string | null;
+  product_name: string;
+  description?: string | null;
+  category: string;
+  stylus_type?: string | null;
+  thread?: string | null;
+  ball_material?: string | null;
+  ball_diameter_mm?: number | null;
+  stem_material?: string | null;
+  stem_diameter_mm?: number | null;
+  overall_length_mm?: number | null;
+  effective_working_length_mm?: number | null;
+  weight_g?: number | null;
+  source_page: number;
+  source_table?: string | null;
+  source_section?: string | null;
+  extraction_confidence: number;
+  validation_status: string;
+  review_reason?: string | null;
+  extra_attributes: Record<string, unknown>;
+  original_values: Record<string, unknown>;
+  images: ImageInfo[];
+}
+
+export interface DocumentParts {
+  document_id: string;
+  filename: string;
+  total: number;
+  offset: number;
+  limit: number;
+  categories: Record<string, number>;
+  parts: DocumentPart[];
+}
+
+export interface FollowUp {
+  type: string;
+  attribute: string;
+  question: string;
+  options: string[];
+  option_counts: number[];
 }

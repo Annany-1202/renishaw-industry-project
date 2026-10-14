@@ -15,19 +15,40 @@ from backend.app.matching import domain
 from backend.app.matching.schemas import ParsedQuery
 
 
+NOT_RELATED = "This request is not related to the uploaded catalogues."
+CATEGORY_PLURALS = {
+    "stylus": "styli", "extension": "stylus extensions", "adaptor": "thread adaptors", "knuckle": "knuckles",
+    "cube": "stylus cubes", "holder": "stylus holders", "kit": "stylus kits", "tool": "stylus tools",
+    "accessory": "accessories",
+}
+
+
+def out_of_scope_message(detail: Optional[str] = None) -> str:
+    """The answer to a request outside the catalogues: says so plainly and states what can be searched."""
+    try:
+        from backend.app.retrieval import catalogue
+        names, counts = catalogue.document_names(), catalogue.category_counts()
+    except Exception:
+        names, counts = [], {}
+    parts = [NOT_RELATED]
+    if detail:
+        parts.append(detail)
+    if names:
+        covered = [CATEGORY_PLURALS.get(c, c) for c in CATEGORY_PLURALS if counts.get(c)]
+        parts.append(f"The indexed catalogues ({', '.join(names)}) cover {', '.join(covered) or 'CMM styli'}.")
+    else:
+        parts.append("No catalogue is indexed yet.")
+    parts.append("Describe a catalogue product to search, for example 'M3 stylus with 2 mm ruby ball'.")
+    return " ".join(parts)
+
+
 def check_relevance(query_text: str, parsed: ParsedQuery) -> Tuple[bool, Optional[str]]:
     words = re.findall(r"[a-z]+", (query_text or "").lower())
     foreign = next((w for w in words if w in domain.FOREIGN_TERMS), None)
     if foreign:
-        return False, (
-            f"The request is about '{foreign}', which is not a product in the indexed catalogues. "
-            "The catalogues cover Renishaw styli, extensions, adaptors and accessories."
-        )
+        return False, out_of_scope_message(f"It asks about '{foreign}', which is not a product in them.")
     if parsed.is_irrelevant:
-        return False, parsed.irrelevance_reason or (
-            "The request does not describe a product covered by the indexed catalogues "
-            "(Renishaw styli, extensions, adaptors and accessories)."
-        )
+        return False, out_of_scope_message(parsed.irrelevance_reason)
     return True, None
 
 

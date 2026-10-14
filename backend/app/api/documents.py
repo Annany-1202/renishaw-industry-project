@@ -2,14 +2,14 @@ import json
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from backend.app.core.config import settings
 from backend.app.core.logging import logger
-from backend.app.db.database import FAILED, QUEUED, db, log_event
+from backend.app.db.database import FAILED, QUEUED, READY, db, log_event
 from backend.app.ingestion.pipeline import DuplicateDocument, register_document, safe_display_name
 from backend.app.lifecycle import jobs
 from backend.app.lifecycle.deletion import DeletionError, DocumentBusy, delete_document, deletion_preview
@@ -174,3 +174,143 @@ def download_report(doc_id: str, kind: str = "report"):
     if not path.is_relative_to(settings.REPORT_DIR.resolve()) or not path.is_file():
         raise HTTPException(status_code=404, detail="No report is available for this document.")
     return FileResponse(str(path), media_type=media_type, filename=path.name)
+
+
+# --- browsing a document's extracted images and parts ------------------------------------------
+
+PART_FIELDS = (
+    "id", "manufacturer", "part_number", "alt_part_number", "product_name", "description", "category", "stylus_type",
+    "thread", "ball_material", "ball_diameter_mm", "stem_material", "stem_diameter_mm", "overall_length_mm",
+    "effective_working_length_mm", "weight_g", "source_page", "source_table", "source_section",
+    "extraction_confidence", "validation_status", "review_reason",
+)
+PART_TEXT_COLUMNS = ("part_number", "alt_part_number", "product_name", "description")
+
+
+def _ready_document(conn, doc_id: str):
+    """Images and parts are served only for Ready documents; anything else is staging data."""
+    row = conn.execute("SELECT id, filename, status, page_count FROM documents WHERE id = ?", (doc_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    if row["status"] != READY:
+        raise HTTPException(status_code=409,
+                            detail=f"Images and parts are available once the document is Ready (status: {row['status']}).")
+    return row
+
+
+def _json_dict(text: Optional[str]) -> Dict[str, Any]:
+    try:
+        value = json.loads(text) if text else {}
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _image_description(image_type: str, filename: str, page: int, metadata_text: Optional[str]) -> str:
+    return _json_dict(metadata_text).get("view") or f"{image_type.capitalize()} from {filename}, page {page}"
+
+
+@router.get("/{doc_id}/images")
+def list_document_images(doc_id: str) -> Dict[str, Any]:
+    """Every image extracted from the document, with its page, type and the part numbers it is linked to."""
+    _check_id(doc_id)
+    with db() as conn:
+        doc = _ready_document(conn, doc_id)
+        rows = conn.execute(
+            "SELECT image_id, page_number, image_type, extraction_metadata FROM images "
+            "WHERE document_id = ? ORDER BY page_number, image_id", (doc_id,),
+        ).fetchall()
+        links = conn.execute(
+            "SELECT l.image_id, l.product_id, l.part_number, l.association_status, l.association_basis, p.product_name "
+            "FROM product_images l JOIN images i ON i.image_id = l.image_id JOIN products p ON p.id = l.product_id "
+            "WHERE i.document_id = ? AND l.association_status != 'rejected' ORDER BY l.part_number",
+            (doc_id,),
+        ).fetchall()
+    parts_by_image: Dict[str, List[Dict[str, Any]]] = {}
+    for link in links:
+        parts_by_image.setdefault(link["image_id"], []).append({
+            "part_number": link["part_number"], "product_id": link["product_id"], "product_name": link["product_name"],
+            "association_status": link["association_status"], "association_basis": link["association_basis"],
+        })
+    images = []
+    type_counts: Dict[str, int] = {}
+    for row in rows:
+        type_counts[row["image_type"]] = type_counts.get(row["image_type"], 0) + 1
+        images.append({
+            "image_id": row["image_id"], "document_id": doc_id, "source_pdf": doc["filename"],
+            "page_number": row["page_number"], "image_type": row["image_type"],
+            "image_url": f"/api/images/{row['image_id']}",
+            "description": _image_description(row["image_type"], doc["filename"], row["page_number"],
+                                              row["extraction_metadata"]),
+            "associated_parts": parts_by_image.get(row["image_id"], []),
+        })
+    return {
+        "document_id": doc_id, "filename": doc["filename"], "page_count": doc["page_count"],
+        "total": len(images), "image_types": type_counts,
+        "linked_images": sum(1 for i in images if i["associated_parts"]), "images": images,
+    }
+
+
+def _like_pattern(text: str) -> str:
+    escaped = text.strip().lower().replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    return f"%{escaped}%"
+
+
+@router.get("/{doc_id}/parts")
+def list_document_parts(
+    doc_id: str,
+    q: Optional[str] = Query(default=None, max_length=100),
+    category: Optional[str] = Query(default=None, max_length=40),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=500),
+) -> Dict[str, Any]:
+    """The parts extracted from the document with their specifications, provenance and linked images."""
+    _check_id(doc_id)
+    where, params = ["document_id = ?"], [doc_id]
+    if category:
+        where.append("category = ?")
+        params.append(category.strip().lower())
+    if q and q.strip():
+        where.append("(" + " OR ".join(f"lower(coalesce({c}, '')) LIKE ? ESCAPE '!'" for c in PART_TEXT_COLUMNS) + ")")
+        params.extend([_like_pattern(q)] * len(PART_TEXT_COLUMNS))
+    condition = " AND ".join(where)
+    with db() as conn:
+        doc = _ready_document(conn, doc_id)
+        categories = {r[0]: r[1] for r in conn.execute(
+            "SELECT category, count(*) FROM products WHERE document_id = ? GROUP BY category ORDER BY category",
+            (doc_id,))}
+        total = conn.execute(f"SELECT count(*) FROM products WHERE {condition}", params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM products WHERE {condition} ORDER BY source_page, part_number, id LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        links = conn.execute(
+            "SELECT l.product_id, l.association_status, l.association_basis, i.image_id, i.page_number, "
+            "i.image_type, i.extraction_metadata FROM product_images l JOIN images i ON i.image_id = l.image_id "
+            f"WHERE l.product_id IN ({','.join('?' * len(ids))}) AND l.association_status != 'rejected' "
+            "ORDER BY i.page_number, i.image_id", ids,
+        ).fetchall() if ids else []
+    images: Dict[str, List[Dict[str, Any]]] = {}
+    for link in links:
+        images.setdefault(link["product_id"], []).append({
+            "image_id": link["image_id"], "document_id": doc_id, "source_pdf": doc["filename"],
+            "page_number": link["page_number"], "image_url": f"/api/images/{link['image_id']}",
+            "image_type": link["image_type"], "association_status": link["association_status"],
+            "association_basis": link["association_basis"],
+            "description": _image_description(link["image_type"], doc["filename"], link["page_number"],
+                                              link["extraction_metadata"]),
+        })
+    parts = []
+    for row in rows:
+        part = {f: row[f] for f in PART_FIELDS}
+        part.update(
+            document_id=doc_id, source_pdf=doc["filename"],
+            extra_attributes=_json_dict(row["extra_attributes"]), original_values=_json_dict(row["raw_attributes"]),
+            images=images.get(row["id"], []),
+        )
+        parts.append(part)
+    return {
+        "document_id": doc_id, "filename": doc["filename"], "total": total, "offset": offset, "limit": limit,
+        "categories": categories, "parts": parts,
+    }

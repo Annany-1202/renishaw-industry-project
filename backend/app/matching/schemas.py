@@ -70,6 +70,9 @@ class ParsedQuery(BaseModel):
     clarification_type: Optional[str] = None
     clarification_question: Optional[str] = None
     suggested_options: List[str] = Field(default_factory=list)
+    # Clarification questions already asked for this request (blocking types, and "NARROW:<field>" for
+    # follow-ups), so a follow-up dialogue progresses instead of repeating itself.
+    clarification_history: List[str] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     llm_used: bool = False
     interpreter: str = "rules"
@@ -196,6 +199,8 @@ class SearchResponse(BaseModel):
     total_found: int = 0
     results: List[ProductMatch] = Field(default_factory=list)
     clarification: Optional[Dict[str, Any]] = None
+    # Optional question that narrows a broad result set; the results are still shown.
+    follow_up: Optional[Dict[str, Any]] = None
     diagnostics: Dict[str, Any] = Field(default_factory=dict)
     score_note: str = (
         "Scores are internal ranking scores (0-100) over the requested attributes. They are not "
